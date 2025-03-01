@@ -1,16 +1,30 @@
+// src/view/JobVacancyView.java
+package view;
+
+import controller.JobController;
+import model.DBConnector;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
-import java.awt.*;
-import java.sql.*;
 
-public class JobVacancyApp {
+import java.awt.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public class JobView extends JFrame {
+    private JPanel buttonPanel;
+    private JobController jobController;  // Tambahkan atribut controller
+
     private JFrame frame;
     private DefaultTableModel tableModel;
     private JTable jobTable;
     private Connection connection;
     private boolean isHRD;
     
-    public JobVacancyApp(boolean isHRD) {
+    public JobView(boolean isHRD) {
         this.isHRD = isHRD;
         connection = DBConnector.getConnection();
         frame = new JFrame("Job Vacancy Application");
@@ -241,12 +255,7 @@ public class JobVacancyApp {
             JOptionPane.showMessageDialog(frame, "Please select a job to view applicants.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            String[] options = {"HRD", "Pelamar"};
-            int choice = JOptionPane.showOptionDialog(null, "Login as:", "User Login",
-                    JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
-            new JobVacancyApp(choice == 0);
-        });
+    public void setJobController(JobController jobController) {
+        this.jobController = jobController;
     }
 }
