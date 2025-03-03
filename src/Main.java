@@ -10,11 +10,12 @@ public class Main {
             String[] options = {"HRD", "Pelamar"};
             int choice = JOptionPane.showOptionDialog(null, "Login as:", "User Login",
                     JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
-            boolean isHRD = (choice == 0);
+                    boolean isHRD = (choice == 0);
+                    int hrdId = isHRD ? 1 : -1;
 
             DBConnector jobModel = new DBConnector();
-            JobView jobView = new JobView(isHRD);
-            JobController jobController = new JobController(jobView, jobModel);  // Simpan referensi
+            JobView jobView = new JobView(isHRD,hrdId);
+            JobController jobController = new JobController(jobView, jobModel, hrdId);
 
             jobView.setJobController(jobController); // Kirim ke View
         });

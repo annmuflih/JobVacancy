@@ -13,6 +13,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 
 public class JobView extends JFrame {
     private JPanel buttonPanel;
@@ -23,9 +25,11 @@ public class JobView extends JFrame {
     private JTable jobTable;
     private Connection connection;
     private boolean isHRD;
+    private int hrdId;
     
-    public JobView(boolean isHRD) {
+    public JobView(boolean isHRD,int hrdId) {
         this.isHRD = isHRD;
+        this.hrdId = hrdId;
         connection = DBConnector.getConnection();
         frame = new JFrame("Job Vacancy Application");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -40,7 +44,7 @@ public class JobView extends JFrame {
         JPanel buttonPanel = new JPanel();
         buttonPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 10));
         
-        if (isHRD) {
+        if (isHRD && hrdId == 1) {
             JButton addButton = new JButton("Add Job");
             addButton.setFont(new Font("Arial", Font.BOLD, 12));
             addButton.setBackground(new Color(34, 167, 240));
@@ -109,50 +113,103 @@ public class JobView extends JFrame {
     }
     
     private void addJob() {
-        JTextField jobNameField = new JTextField();
-        JTextField companyField = new JTextField();
-        JTextField addressField = new JTextField();
-        JTextField paymentField = new JTextField();
-        JTextField postDateField = new JTextField();
+    JTextField jobNameField = new JTextField();
+    JTextField companyField = new JTextField();
+    JTextField addressField = new JTextField();
+    JTextField paymentField = new JTextField();
+    JTextField postDateField = new JTextField(); // Format: YYYY-MM-DD
+
+    JPanel panel = new JPanel(new GridLayout(5, 2));
+    panel.add(new JLabel("Job Name:")); panel.add(jobNameField);
+    panel.add(new JLabel("Company:")); panel.add(companyField);
+    panel.add(new JLabel("Address:")); panel.add(addressField);
+    panel.add(new JLabel("Payment:")); panel.add(paymentField);
+    panel.add(new JLabel("Post Date (YYYY-MM-DD):")); panel.add(postDateField);
+
+    int result = JOptionPane.showConfirmDialog(frame, panel, "Enter Job Details", JOptionPane.OK_CANCEL_OPTION);
+    if (result == JOptionPane.OK_OPTION) {
+        try {
+            // Konversi gaji ke integer
+            int payment = Integer.parseInt(paymentField.getText());
+
+            // Konversi tanggal ke java.sql.Date
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            java.util.Date utilDate = dateFormat.parse(postDateField.getText());
+            java.sql.Date sqlDate = new java.sql.Date(utilDate.getTime());
+
+            // Simpan ke database
+            PreparedStatement pstmt = connection.prepareStatement(
+                "INSERT INTO loker (nama_job, perusahaan, alamat, gaji, tanggal_posting, hrd_id) VALUES (?, ?, ?, ?, ?, ?)"
+            );
+            pstmt.setString(1, jobNameField.getText());
+            pstmt.setString(2, companyField.getText());
+            pstmt.setString(3, addressField.getText());
+            pstmt.setInt(4, payment);
+            pstmt.setDate(5, sqlDate);
+            pstmt.setInt(6, hrdId);
+            pstmt.executeUpdate();
+            
+            loadJobsFromDatabase();
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(frame, "Invalid input for Payment. Please enter a number.", "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (ParseException e) {
+            JOptionPane.showMessageDialog(frame, "Invalid date format. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+}
     
-        JPanel panel = new JPanel(new GridLayout(5, 2));
-        panel.add(new JLabel("Job Name:")); panel.add(jobNameField);
-        panel.add(new JLabel("Company:")); panel.add(companyField);
-        panel.add(new JLabel("Address:")); panel.add(addressField);
-        panel.add(new JLabel("Payment:")); panel.add(paymentField);
-        panel.add(new JLabel("Post Date:")); panel.add(postDateField);
+    public JTable getJobTable() {
+        return jobTable;
+    }
     
-        int result = JOptionPane.showConfirmDialog(frame, panel, "Enter Job Details", JOptionPane.OK_CANCEL_OPTION);
-        if (result == JOptionPane.OK_OPTION) {
-            try {
-                PreparedStatement pstmt = connection.prepareStatement("INSERT INTO loker (nama_job, perusahaan, alamat, gaji, tanggal_posting) VALUES (?, ?, ?, ?, ?)");
-                pstmt.setString(1, jobNameField.getText());
-                pstmt.setString(2, companyField.getText());
-                pstmt.setString(3, addressField.getText());
-                pstmt.setString(4, paymentField.getText());
-                pstmt.setString(5, postDateField.getText());
-                pstmt.executeUpdate();
-                loadJobsFromDatabase();
+    public void deleteJob() {
+        int selectedRow = getJobTable().getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(null, "Please select a job to delete.");
+            return;
+        }
+    
+        int jobId = (int) getJobTable().getValueAt(selectedRow, 0);
+    
+        int confirm = JOptionPane.showConfirmDialog(null, 
+                "Are you sure you want to delete this job? This will also remove all applicants!", 
+                "Confirm Deletion", JOptionPane.YES_NO_OPTION);
+    
+        if (confirm == JOptionPane.YES_OPTION) {
+            try (Connection conn = DBConnector.getConnection()) {
+                // Hapus pelamar yang terkait dengan job ini
+                String deletePelamarSQL = "DELETE FROM pelamar WHERE id IN (SELECT pelamar_id FROM loker WHERE id = ?)";
+                try (PreparedStatement pelamarStmt = conn.prepareStatement(deletePelamarSQL)) {
+                    pelamarStmt.setInt(1, jobId);
+                    pelamarStmt.executeUpdate();
+                }
+    
+                // Hapus job dari loker
+                String deleteLokerSQL = "DELETE FROM loker WHERE id = ?";
+                try (PreparedStatement jobStmt = conn.prepareStatement(deleteLokerSQL)) {
+                    jobStmt.setInt(1, jobId);
+                    int rowsDeleted = jobStmt.executeUpdate();
+    
+                    if (rowsDeleted > 0) {
+                        JOptionPane.showMessageDialog(null, "Job and related applicants deleted successfully.");
+                        
+                        // Refresh tabel dengan memuat ulang data dari database
+                        loadJobsFromDatabase();
+    
+                        // Memastikan tabel langsung diperbarui di UI
+                        SwingUtilities.invokeLater(() -> {
+                            tableModel.fireTableDataChanged();
+                        });
+                    }
+                }
             } catch (SQLException e) {
                 e.printStackTrace();
+                JOptionPane.showMessageDialog(null, "Failed to delete job.");
             }
         }
-    }
-    
-    private void deleteJob() {
-        int selectedRow = jobTable.getSelectedRow();
-        if (selectedRow != -1) {
-            int jobId = Integer.parseInt(tableModel.getValueAt(selectedRow, 0).toString());
-            int confirm = JOptionPane.showConfirmDialog(frame, "Are you sure you want to delete this job?", "Confirm Delete", JOptionPane.YES_NO_OPTION);
-            if (confirm == JOptionPane.YES_OPTION) {
-                DBConnector.deleteJob(jobId);
-                loadJobsFromDatabase();
-                JOptionPane.showMessageDialog(frame, "Job deleted successfully.");
-            }
-        } else {
-            JOptionPane.showMessageDialog(frame, "Please select a job to delete.", "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
+    }    
     
     private void applyJob() {
         int selectedRow = jobTable.getSelectedRow();
@@ -207,32 +264,67 @@ public class JobView extends JFrame {
     
     private void editJob() {
         int selectedRow = jobTable.getSelectedRow();
-        if (selectedRow != -1) {
-            String jobName = JOptionPane.showInputDialog(frame, "Enter new Job Name:", tableModel.getValueAt(selectedRow, 1));
-            String company = JOptionPane.showInputDialog(frame, "Enter new Company:", tableModel.getValueAt(selectedRow, 2));
-            String address = JOptionPane.showInputDialog(frame, "Enter new Address:", tableModel.getValueAt(selectedRow, 3));
-            String payment = JOptionPane.showInputDialog(frame, "Enter new Payment:", tableModel.getValueAt(selectedRow, 4));
-            String postDate = JOptionPane.showInputDialog(frame, "Enter new Post Date:", tableModel.getValueAt(selectedRow, 5));
-            
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(frame, "Please select a job to edit.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+    
+        // Ambil data dari tabel
+        String jobName = tableModel.getValueAt(selectedRow, 1).toString();
+        String company = tableModel.getValueAt(selectedRow, 2).toString();
+        String address = tableModel.getValueAt(selectedRow, 3).toString();
+        int payment = Integer.parseInt(tableModel.getValueAt(selectedRow, 4).toString());
+        String postDate = tableModel.getValueAt(selectedRow, 5).toString(); // Format YYYY-MM-DD
+    
+        // Buat input fields dengan nilai default
+        JTextField jobNameField = new JTextField(jobName);
+        JTextField companyField = new JTextField(company);
+        JTextField addressField = new JTextField(address);
+        JTextField paymentField = new JTextField(String.valueOf(payment));
+        JTextField postDateField = new JTextField(postDate);
+    
+        JPanel panel = new JPanel(new GridLayout(5, 2));
+        panel.add(new JLabel("Job Name:")); panel.add(jobNameField);
+        panel.add(new JLabel("Company:")); panel.add(companyField);
+        panel.add(new JLabel("Address:")); panel.add(addressField);
+        panel.add(new JLabel("Payment:")); panel.add(paymentField);
+        panel.add(new JLabel("Post Date (YYYY-MM-DD):")); panel.add(postDateField);
+    
+        int result = JOptionPane.showConfirmDialog(frame, panel, "Edit Job Details", JOptionPane.OK_CANCEL_OPTION);
+        if (result == JOptionPane.OK_OPTION) {
             int jobId = Integer.parseInt(tableModel.getValueAt(selectedRow, 0).toString());
             try {
+                // Konversi gaji ke integer
+                int newPayment = Integer.parseInt(paymentField.getText());
+    
+                // Konversi tanggal ke java.sql.Date
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                java.util.Date utilDate = dateFormat.parse(postDateField.getText());
+                java.sql.Date sqlDate = new java.sql.Date(utilDate.getTime());
+    
+                // Simpan ke database
                 String query = "UPDATE loker SET nama_job = ?, perusahaan = ?, alamat = ?, gaji = ?, tanggal_posting = ? WHERE id = ?";
                 PreparedStatement pstmt = connection.prepareStatement(query);
-                pstmt.setString(1, jobName);
-                pstmt.setString(2, company);
-                pstmt.setString(3, address);
-                pstmt.setString(4, payment);
-                pstmt.setString(5, postDate);
+                pstmt.setString(1, jobNameField.getText());
+                pstmt.setString(2, companyField.getText());
+                pstmt.setString(3, addressField.getText());
+                pstmt.setInt(4, newPayment);
+                pstmt.setDate(5, sqlDate);
                 pstmt.setInt(6, jobId);
                 pstmt.executeUpdate();
+                
                 loadJobsFromDatabase();
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(frame, "Invalid input for Payment. Please enter a number.", "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (ParseException e) {
+                JOptionPane.showMessageDialog(frame, "Invalid date format. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
             } catch (SQLException e) {
                 e.printStackTrace();
             }
-        } else {
-            JOptionPane.showMessageDialog(frame, "Please select a job to edit.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
+    
+    
     private void viewApplicants() {
         int selectedRow = jobTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -243,7 +335,7 @@ public class JobView extends JFrame {
                 while (rs.next()) {
                     applicantsList.append("Name: ").append(rs.getString("nama"))
                                   .append(", Email: ").append(rs.getString("email"))
-                                  .append(", Phone: ").append(rs.getString("telepon"))
+                                  .append(", Phone: ").append(rs.getInt("telepon"))
                                   .append("\n");
                 }
                 JOptionPane.showMessageDialog(frame, applicantsList.toString(), "Applicants List", JOptionPane.INFORMATION_MESSAGE);
